@@ -81,13 +81,17 @@ impl UnitWatch {
             let name = short_unit(id);
             let was = self.prev.as_ref().and_then(|p| p.get(id));
             match was {
-                None if self.prev.is_none() && u.failed() => out.push(failed_event(
+                // First time this unit is seen and it's already failed: on the
+                // very first snapshot, or a unit that appeared since (e.g. a
+                // newly installed unit that's broken).
+                None if u.failed() => out.push(failed_event(
                     u,
                     format!("{name} is failed"),
-                    format!(
-                        "{id} was already in the failed state when watching started (result: {}).",
-                        u.result
-                    ),
+                    if self.prev.is_none() {
+                        format!("{id} was already in the failed state when watching started (result: {}).", u.result)
+                    } else {
+                        format!("{id} appeared in the failed state (result: {}).", u.result)
+                    },
                 )),
                 None => {}
                 Some(w) => {
@@ -121,7 +125,7 @@ impl UnitWatch {
                             "units",
                             Severity::Warn,
                             format!("unit-restarted:{id}"),
-                            format!("{name} restarted"),
+                            format!("{name} restarted itself"),
                             format!(
                                 "{id} restarted {} time(s) since the last check.",
                                 u.n_restarts - w.n_restarts
@@ -290,8 +294,26 @@ mod tests {
         back.n_restarts = 2;
         let ev = w.observe(vec![back]);
         let titles: Vec<_> = ev.iter().map(|e| e.title.as_str()).collect();
-        assert_eq!(titles, ["holodrive recovered", "holodrive restarted"]);
+        assert_eq!(
+            titles,
+            ["holodrive recovered", "holodrive restarted itself"]
+        );
         assert_eq!(ev[0].severity, Severity::Info);
+    }
+
+    #[test]
+    fn a_unit_that_appears_failed_is_reported() {
+        let mut w = UnitWatch::default();
+        assert!(w
+            .observe(vec![svc("a.service", "active", "success", &[])])
+            .is_empty());
+        let ev = w.observe(vec![
+            svc("a.service", "active", "success", &[]),
+            svc("new.service", "failed", "exit-code", &[]),
+        ]);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0].title, "new is failed");
+        assert!(ev[0].body.contains("appeared"));
     }
 
     #[test]
