@@ -124,7 +124,7 @@ impl UnitWatch {
                         out.push(Event::new(
                             "units",
                             Severity::Warn,
-                            format!("unit-restarted:{id}"),
+                            format!("unit-restart:{id}"),
                             format!("{name} restarted itself"),
                             format!(
                                 "{id} restarted {} time(s) since the last check.",
